@@ -217,6 +217,7 @@ class IdP(models.Model):
             "security": {
                 "wantAttributeStatement": self.require_attributes,
                 "metadataValidUntil": self.certificate_expires,
+                "authnRequestsSigned": True,
                 "requestedAuthnContextComparison": self.authn_comparison,
                 "requestedAuthnContext": self.authn_context,
                 "logoutRequestSigned": self.logout_request_signed,
