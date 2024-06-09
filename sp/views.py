@@ -24,10 +24,16 @@ def metadata(request, **kwargs):
 @csrf_exempt
 @require_POST
 def acs(request, **kwargs):
+    print('1')
     idp = get_request_idp(request, **kwargs)
+    print('2')
+    
     state = request.POST.get("RelayState")
     saml = OneLogin_Saml2_Auth(idp.prepare_request(request), old_settings=idp.settings)
+    print('3')
+    
     saml.process_response()
+    print('4')
     errors = saml.get_errors()
     if errors:
         return render(
