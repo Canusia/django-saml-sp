@@ -48,7 +48,11 @@ class IdP(models.Model):
     authn_requests_signed = models.BooleanField(
         _("Sign Authentication Request"), default=False
     )
-    
+
+    want_assertions_signed = models.BooleanField(
+        _("Want Assertions Signed"), default=False
+    )
+
     x509_certificate = models.TextField(blank=True)
     private_key = models.TextField(blank=True)
     certificate_expires = models.DateTimeField(null=True, blank=True)
@@ -223,6 +227,7 @@ class IdP(models.Model):
                 "wantAttributeStatement": self.require_attributes,
                 "metadataValidUntil": self.certificate_expires,
                 "authnRequestsSigned": self.authn_requests_signed,
+                "wantAssertionsSigned": self.want_assertions_signed,
                 "requestedAuthnContextComparison": self.authn_comparison,
                 "requestedAuthnContext": self.authn_context,
                 "logoutRequestSigned": self.logout_request_signed,

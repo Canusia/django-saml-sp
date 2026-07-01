@@ -52,6 +52,7 @@ class IdPAdmin(admin.ModelAdmin):
                     "contact_name",
                     "contact_email",
                     "authn_requests_signed",
+                    "want_assertions_signed",
                     "x509_certificate",
                     "private_key",
                     "certificate_expires",
