@@ -1,6 +1,7 @@
 import collections
 import datetime
 import json
+import logging
 from urllib.parse import urlparse
 
 from cryptography import x509
@@ -11,12 +12,14 @@ from cryptography.x509.oid import NameOID
 from django.conf import settings
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
-from django.db import models
+from django.db import models, transaction
 from django.urls import NoReverseMatch, reverse
 from django.utils import timezone
 from django.utils.module_loading import import_string
 from django.utils.translation import gettext_lazy as _
 from onelogin.saml2.idp_metadata_parser import OneLogin_Saml2_IdPMetadataParser
+
+logger = logging.getLogger(__name__)
 
 
 def _default_authn_context():
@@ -308,34 +311,44 @@ class IdP(models.Model):
     def log_attributes(self, saml):
         """Store one IdPAttributeLog row capturing the full SAML response."""
         try:
-            nameid = saml.get_nameid() or ""
+            try:
+                nameid = saml.get_nameid() or ""
+            except Exception:
+                nameid = ""
+            return self.attribute_logs.create(
+                nameid=nameid, attributes=saml.get_attributes()
+            )
         except Exception:
-            nameid = ""
-        return self.attribute_logs.create(
-            nameid=nameid, attributes=saml.get_attributes()
-        )
+            logger.exception("log_attributes failed for idp=%s", self.pk)
+            return None
 
     def duplicate(self, name=None):
-        """Deep-copy this IdP config, including attribute maps and user defaults."""
-        attributes = list(self.attributes.all())
-        defaults = list(self.user_defaults.all())
-        new = IdP.objects.get(pk=self.pk)
-        new.pk = None
-        new._state.adding = True
-        new.name = name or "{} (copy)".format(self.name)
-        new.last_login = None
-        new.last_import = None
-        new.save()
-        for attr in attributes:
-            attr.pk = None
-            attr._state.adding = True
-            attr.idp = new
-            attr.save()
-        for default in defaults:
-            default.pk = None
-            default._state.adding = True
-            default.idp = new
-            default.save()
+        """Deep-copy this IdP config, including attribute maps and user defaults.
+
+        Note: the copy carries over ``private_key``, ``x509_certificate``, and
+        ``entity_id`` verbatim — it is a same-identity clone until those fields
+        are edited.
+        """
+        with transaction.atomic():
+            attributes = list(self.attributes.all())
+            defaults = list(self.user_defaults.all())
+            new = IdP.objects.get(pk=self.pk)
+            new.pk = None
+            new._state.adding = True
+            new.name = name or "{} (copy)".format(self.name)
+            new.last_login = None
+            new.last_import = None
+            new.save()
+            for attr in attributes:
+                attr.pk = None
+                attr._state.adding = True
+                attr.idp = new
+                attr.save()
+            for default in defaults:
+                default.pk = None
+                default._state.adding = True
+                default.idp = new
+                default.save()
         return new
 
     def mapped_attributes(self, saml):

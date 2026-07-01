@@ -127,6 +127,37 @@ class AuthBackendTest(TestCase):
         self.assertIsNone(result)
         self.assertFalse(any(rec.startswith("ERROR") for rec in cm.output))
 
+    def test_case_insensitive_lookup_returns_user(self):
+        user = self.User.objects.create(username="User@Example.com")
+        self.idp.auth_case_sensitive = False
+        self.idp.save()
+        result = self.backend.authenticate(
+            None, idp=self.idp, saml=FakeAuthSAML("user@example.com")
+        )
+        self.assertEqual(result, user)
+
+    def test_multiple_matches_returns_none(self):
+        self.User.objects.create(username="user@example.com")
+        self.User.objects.create(username="USER@EXAMPLE.COM")
+        self.idp.auth_case_sensitive = False
+        self.idp.save()
+        with self.assertLogs("sp.backends", level="INFO"):
+            result = self.backend.authenticate(
+                None, idp=self.idp, saml=FakeAuthSAML("user@example.com")
+            )
+        self.assertIsNone(result)
+
+    def test_malformed_nameid_returns_none(self):
+        class BrokenSAML(FakeAuthSAML):
+            def get_nameid(self):
+                raise ValueError("malformed nameid")
+
+        with self.assertLogs("sp.backends", level="INFO"):
+            result = self.backend.authenticate(
+                None, idp=self.idp, saml=BrokenSAML("")
+            )
+        self.assertIsNone(result)
+
 
 from django.template.loader import render_to_string
 
