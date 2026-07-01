@@ -333,7 +333,7 @@ class IdP(models.Model):
             return None
 
     def duplicate(self, name=None):
-        """Deep-copy this IdP config, including attribute maps and user defaults.
+        """Copy this IdP config, including attribute maps and user defaults.
 
         Note: the copy carries over private_key/x509_certificate/entity_id
         verbatim, so it is a same-identity clone until an admin edits it.
@@ -342,6 +342,10 @@ class IdP(models.Model):
             new = copy.copy(self)
             new.pk = None
             new._state.adding = True
+            # copy.copy is shallow; give the clone its own JSONField containers
+            # so in-memory edits to the copy can't mutate the original's dict/list.
+            new.url_params = copy.deepcopy(self.url_params)
+            new.authn_context = copy.deepcopy(self.authn_context)
             new.name = name or "{} (copy)".format(self.name)
             new.last_login = None
             new.last_import = None

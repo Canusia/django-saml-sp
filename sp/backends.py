@@ -106,6 +106,9 @@ class MyCESAMLAuthenticationBackend(ModelBackend):
         username_field = UserModel.USERNAME_FIELD
         if not idp.auth_case_sensitive:
             username_field += "__iexact"
+        # Only account-resolution outcomes are handled here. Unexpected errors
+        # (e.g. a DB OperationalError) are intentionally left to propagate rather
+        # than be masked as an authentication failure.
         try:
             return UserModel._default_manager.get(**{username_field: username})
         except UserModel.DoesNotExist:

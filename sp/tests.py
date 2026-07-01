@@ -221,6 +221,15 @@ class DuplicateIdPTest(TestCase):
         copy = idp.duplicate(name="Secondary")
         self.assertEqual(copy.name, "Secondary")
 
+    def test_duplicate_does_not_share_jsonfield_containers(self):
+        idp = make_idp(name="Primary", url_params={"app": "one"})
+        clone = idp.duplicate()
+        # Mutating the clone's JSON containers must not touch the original's.
+        clone.url_params["app"] = "two"
+        clone.authn_context.append("extra")
+        self.assertEqual(idp.url_params, {"app": "one"})
+        self.assertNotIn("extra", idp.authn_context)
+
 
 from sp.views import _should_log_response
 
@@ -257,9 +266,9 @@ class LogResponseAttributesToggleTest(TestCase):
         self.assertEqual(idp.attribute_logs.count(), 1)
 
     def test_disabled_toggle_gates_logging_at_call_site(self):
-        # The ACS view guards on idp.log_response_attributes; when off it does
-        # not call log_attributes, so no row is written.
+        # Exercise the real ACS guard (_should_log_response), not an inlined copy.
+        from sp.views import _should_log_response
+
         idp = make_idp(log_response_attributes=False)
-        if idp.log_response_attributes:
-            idp.log_attributes(self.FakeSAML())
+        self.assertFalse(_should_log_response(idp, None))
         self.assertEqual(idp.attribute_logs.count(), 0)
