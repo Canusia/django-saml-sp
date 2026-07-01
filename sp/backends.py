@@ -1,3 +1,4 @@
+import logging
 import re
 
 from django.conf import settings
@@ -7,6 +8,8 @@ from django.contrib.auth.backends import ModelBackend
 from .models import IdPUser
 
 UserModel = get_user_model()
+
+logger = logging.getLogger(__name__)
 
 
 class SAMLAuthenticationBackend(ModelBackend):
@@ -70,3 +73,44 @@ class SAMLAuthenticationBackend(ModelBackend):
         # By default just call through to IdP.update_user, but provide an easy place
         # to customize this behavior for subclasses.
         return idp.update_user(request, saml, user, created)
+
+
+class MyCESAMLAuthenticationBackend(ModelBackend):
+    """
+    Associates an existing (already-provisioned) user with a SAML identity by
+    username. Unlike the upstream backend it never creates users: a valid SAML
+    identity with no matching account is a login failure. Whether that failure
+    is surfaced to admins is controlled per-IdP by `email_auth_errors_to_admins`.
+    """
+
+    def get_username(self, idp, saml):
+        username = idp.get_nameid(saml)
+        return re.sub(r"[^a-zA-Z0-9_@\+\.]", "-", username)
+
+    def _log_failure(self, idp, message):
+        if idp.email_auth_errors_to_admins:
+            logger.error(message)
+        else:
+            logger.info(message)
+
+    def authenticate(self, request, idp=None, saml=None):
+        if idp is None or saml is None:
+            return None
+        username = self.get_username(idp, saml)
+        username_field = UserModel.USERNAME_FIELD
+        if not idp.auth_case_sensitive:
+            username_field += "__iexact"
+        try:
+            return UserModel._default_manager.get(**{username_field: username})
+        except UserModel.DoesNotExist:
+            self._log_failure(
+                idp, "SAML login failed: no account for %s (idp=%s)" % (username, idp.pk)
+            )
+            return None
+        except UserModel.MultipleObjectsReturned:
+            self._log_failure(
+                idp,
+                "SAML login ambiguous: multiple accounts for %s (idp=%s)"
+                % (username, idp.pk),
+            )
+            return None

@@ -76,3 +76,53 @@ class AttributeLogTest(TestCase):
         log = idp.log_attributes(NoNameID(None, {"a": ["1"]}))
         self.assertEqual(log.nameid, "")
         self.assertEqual(log.attributes, {"a": ["1"]})
+
+
+from django.contrib.auth import get_user_model
+
+from sp.backends import MyCESAMLAuthenticationBackend
+
+
+class FakeAuthSAML:
+    def __init__(self, nameid):
+        self._nameid = nameid
+
+    def get_nameid(self):
+        return self._nameid
+
+    def get_attribute(self, name):
+        return None
+
+
+class AuthBackendTest(TestCase):
+    def setUp(self):
+        self.backend = MyCESAMLAuthenticationBackend()
+        self.idp = make_idp()
+        self.User = get_user_model()
+
+    def test_returns_existing_user(self):
+        user = self.User.objects.create(username="user@example.com")
+        result = self.backend.authenticate(
+            None, idp=self.idp, saml=FakeAuthSAML("user@example.com")
+        )
+        self.assertEqual(result, user)
+
+    def test_missing_user_returns_none_and_logs_error_when_enabled(self):
+        self.idp.email_auth_errors_to_admins = True
+        self.idp.save()
+        with self.assertLogs("sp.backends", level="ERROR") as cm:
+            result = self.backend.authenticate(
+                None, idp=self.idp, saml=FakeAuthSAML("ghost@example.com")
+            )
+        self.assertIsNone(result)
+        self.assertTrue(any("ghost@example.com" in m for m in cm.output))
+
+    def test_missing_user_logs_info_when_disabled(self):
+        self.idp.email_auth_errors_to_admins = False
+        self.idp.save()
+        with self.assertLogs("sp.backends", level="INFO") as cm:
+            result = self.backend.authenticate(
+                None, idp=self.idp, saml=FakeAuthSAML("ghost@example.com")
+            )
+        self.assertIsNone(result)
+        self.assertFalse(any(rec.startswith("ERROR") for rec in cm.output))
