@@ -126,3 +126,20 @@ class AuthBackendTest(TestCase):
             )
         self.assertIsNone(result)
         self.assertFalse(any(rec.startswith("ERROR") for rec in cm.output))
+
+
+from django.template.loader import render_to_string
+
+
+class AuthFailedMessageTest(TestCase):
+    def test_field_default_blank(self):
+        idp = make_idp()
+        self.assertEqual(idp.auth_failed_message, "")
+
+    def test_unauth_template_renders_custom_message(self):
+        idp = make_idp(auth_failed_message="You have no MyCE account. Contact support.")
+        html = render_to_string(
+            "sp/unauth.html",
+            {"idp": idp, "auth_failed_message": idp.auth_failed_message},
+        )
+        self.assertIn("You have no MyCE account. Contact support.", html)

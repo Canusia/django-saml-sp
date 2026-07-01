@@ -79,6 +79,7 @@ class IdPAdmin(admin.ModelAdmin):
                     "create_users",
                     "associate_users",
                     "email_auth_errors_to_admins",
+                    "auth_failed_message",
                     "respect_expiration",
                     "logout_triggers_slo",
                     "login_redirect",

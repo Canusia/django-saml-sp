@@ -70,6 +70,7 @@ def acs(request, **kwargs):
                         "nameid": idp.get_nameid(saml),
                         "idp": idp,
                         "verify": True,
+                        "auth_failed_message": idp.auth_failed_message,
                     },
                     status=401,
                 )
@@ -91,6 +92,7 @@ def acs(request, **kwargs):
                         "nameid": idp.get_nameid(saml),
                         "idp": idp,
                         "verify": False,
+                        "auth_failed_message": idp.auth_failed_message,
                     },
                     status=401,
                 )
