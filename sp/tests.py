@@ -52,6 +52,10 @@ class AttributeLogTest(TestCase):
         def get_nameid(self):
             return self._nameid
 
+        def get_attribute(self, name):
+            value = self._attributes.get(name)
+            return value
+
         def get_attributes(self):
             return self._attributes
 
@@ -76,6 +80,20 @@ class AttributeLogTest(TestCase):
         log = idp.log_attributes(NoNameID(None, {"a": ["1"]}))
         self.assertEqual(log.nameid, "")
         self.assertEqual(log.attributes, {"a": ["1"]})
+
+    def test_log_attributes_uses_mapped_nameid(self):
+        from sp.models import IdPAttribute
+
+        idp = make_idp()
+        IdPAttribute.objects.create(
+            idp=idp, saml_attribute="eppn", mapped_name="username", is_nameid=True
+        )
+        saml = self.FakeSAML(
+            "raw-transient-id",
+            {"eppn": ["mapped@example.com"]},
+        )
+        log = idp.log_attributes(saml)
+        self.assertEqual(log.nameid, "mapped@example.com")
 
 
 from django.contrib.auth import get_user_model
@@ -202,6 +220,23 @@ class DuplicateIdPTest(TestCase):
         idp = make_idp(name="Primary")
         copy = idp.duplicate(name="Secondary")
         self.assertEqual(copy.name, "Secondary")
+
+
+from sp.views import _should_log_response
+
+
+class ShouldLogResponseTest(TestCase):
+    def test_toggle_on_normal_state_returns_true(self):
+        idp = make_idp(log_response_attributes=True)
+        self.assertTrue(_should_log_response(idp, "/dashboard"))
+
+    def test_toggle_on_test_state_returns_false(self):
+        idp = make_idp(log_response_attributes=True)
+        self.assertFalse(_should_log_response(idp, "test:/foo"))
+
+    def test_toggle_off_returns_false(self):
+        idp = make_idp(log_response_attributes=False)
+        self.assertFalse(_should_log_response(idp, "/dashboard"))
 
 
 class LogResponseAttributesToggleTest(TestCase):

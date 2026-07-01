@@ -1,4 +1,5 @@
 import collections
+import copy
 import datetime
 import json
 import logging
@@ -321,7 +322,7 @@ class IdP(models.Model):
         """Store one IdPAttributeLog row capturing the full SAML response."""
         try:
             try:
-                nameid = saml.get_nameid() or ""
+                nameid = self.get_nameid(saml) or ""
             except Exception:
                 nameid = ""
             return self.attribute_logs.create(
@@ -334,30 +335,29 @@ class IdP(models.Model):
     def duplicate(self, name=None):
         """Deep-copy this IdP config, including attribute maps and user defaults.
 
-        Note: the copy carries over ``private_key``, ``x509_certificate``, and
-        ``entity_id`` verbatim — it is a same-identity clone until those fields
-        are edited.
+        Note: the copy carries over private_key/x509_certificate/entity_id
+        verbatim, so it is a same-identity clone until an admin edits it.
         """
         with transaction.atomic():
-            attributes = list(self.attributes.all())
-            defaults = list(self.user_defaults.all())
-            new = IdP.objects.get(pk=self.pk)
+            new = copy.copy(self)
             new.pk = None
             new._state.adding = True
             new.name = name or "{} (copy)".format(self.name)
             new.last_login = None
             new.last_import = None
             new.save()
-            for attr in attributes:
-                attr.pk = None
-                attr._state.adding = True
-                attr.idp = new
-                attr.save()
-            for default in defaults:
-                default.pk = None
-                default._state.adding = True
-                default.idp = new
-                default.save()
+            for attr in self.attributes.all():
+                new_attr = copy.copy(attr)
+                new_attr.pk = None
+                new_attr._state.adding = True
+                new_attr.idp = new
+                new_attr.save()
+            for default in self.user_defaults.all():
+                new_default = copy.copy(default)
+                new_default.pk = None
+                new_default._state.adding = True
+                new_default.idp = new
+                new_default.save()
         return new
 
     def mapped_attributes(self, saml):

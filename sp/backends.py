@@ -98,9 +98,15 @@ class MyCESAMLAuthenticationBackend(ModelBackend):
             return None
         try:
             username = self.get_username(idp, saml)
-            username_field = UserModel.USERNAME_FIELD
-            if not idp.auth_case_sensitive:
-                username_field += "__iexact"
+        except Exception:
+            self._log_failure(
+                idp, "SAML login error: could not derive username (idp=%s)" % idp.pk
+            )
+            return None
+        username_field = UserModel.USERNAME_FIELD
+        if not idp.auth_case_sensitive:
+            username_field += "__iexact"
+        try:
             return UserModel._default_manager.get(**{username_field: username})
         except UserModel.DoesNotExist:
             self._log_failure(
@@ -112,11 +118,5 @@ class MyCESAMLAuthenticationBackend(ModelBackend):
                 idp,
                 "SAML login ambiguous: multiple accounts for %s (idp=%s)"
                 % (username, idp.pk),
-            )
-            return None
-        except Exception:
-            self._log_failure(
-                idp,
-                "SAML login error: could not derive username (idp=%s)" % idp.pk,
             )
             return None
