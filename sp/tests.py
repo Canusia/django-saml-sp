@@ -41,3 +41,38 @@ class MetadataSigningFlagsTest(TestCase):
         xml = self._metadata(idp)
         self.assertIn('AuthnRequestsSigned="true"', xml)
         self.assertIn('WantAssertionsSigned="false"', xml)
+
+
+class AttributeLogTest(TestCase):
+    class FakeSAML:
+        def __init__(self, nameid, attributes):
+            self._nameid = nameid
+            self._attributes = attributes
+
+        def get_nameid(self):
+            return self._nameid
+
+        def get_attributes(self):
+            return self._attributes
+
+    def test_log_attributes_creates_one_row_with_all_attributes(self):
+        idp = make_idp()
+        saml = self.FakeSAML(
+            "user@example.com",
+            {"eppn": ["user@example.com"], "displayName": ["Test User"]},
+        )
+        log = idp.log_attributes(saml)
+        self.assertEqual(idp.attribute_logs.count(), 1)
+        self.assertEqual(log.nameid, "user@example.com")
+        self.assertEqual(log.attributes["displayName"], ["Test User"])
+
+    def test_log_attributes_tolerates_missing_nameid(self):
+        idp = make_idp()
+
+        class NoNameID(self.FakeSAML):
+            def get_nameid(self):
+                raise ValueError("no nameid")
+
+        log = idp.log_attributes(NoNameID(None, {"a": ["1"]}))
+        self.assertEqual(log.nameid, "")
+        self.assertEqual(log.attributes, {"a": ["1"]})

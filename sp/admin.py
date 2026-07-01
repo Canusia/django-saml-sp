@@ -2,7 +2,7 @@ from __future__ import unicode_literals
 
 from django.contrib import admin
 
-from .models import IdP, IdPAttribute, IdPUserDefaultValue
+from .models import IdP, IdPAttribute, IdPAttributeLog, IdPUserDefaultValue
 
 
 class IdPAttributeInline(admin.TabularInline):
@@ -136,3 +136,19 @@ class IdPAdmin(admin.ModelAdmin):
 
 
 admin.site.register(IdP, IdPAdmin)
+
+
+class IdPAttributeLogAdmin(admin.ModelAdmin):
+    list_display = ("idp", "nameid", "created_on")
+    list_filter = ("idp",)
+    search_fields = ("nameid",)
+    readonly_fields = ("idp", "nameid", "attributes", "created_on")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+admin.site.register(IdPAttributeLog, IdPAttributeLogAdmin)

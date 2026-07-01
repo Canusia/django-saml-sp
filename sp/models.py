@@ -289,6 +289,16 @@ class IdP(models.Model):
         self.last_import = timezone.now()
         self.save()
 
+    def log_attributes(self, saml):
+        """Store one IdPAttributeLog row capturing the full SAML response."""
+        try:
+            nameid = saml.get_nameid() or ""
+        except Exception:
+            nameid = ""
+        return self.attribute_logs.create(
+            nameid=nameid, attributes=saml.get_attributes()
+        )
+
     def mapped_attributes(self, saml):
         attrs = collections.OrderedDict()
         for attr in self.attributes.exclude(mapped_name=""):
@@ -410,3 +420,20 @@ class IdPUser(models.Model):
             ("idp", "nameid"),
             ("idp", "content_type", "user_id"),
         ]
+
+
+class IdPAttributeLog(models.Model):
+    idp = models.ForeignKey(
+        IdP, related_name="attribute_logs", on_delete=models.CASCADE
+    )
+    nameid = models.CharField(max_length=200, db_index=True, blank=True)
+    attributes = models.JSONField(default=dict)
+    created_on = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = _("assertion attribute log")
+        verbose_name_plural = _("assertion attribute logs")
+        ordering = ("-created_on",)
+
+    def __str__(self):
+        return "{} @ {}".format(self.nameid or "(no nameid)", self.created_on)
