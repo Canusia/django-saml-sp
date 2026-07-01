@@ -40,7 +40,8 @@ def acs(request, **kwargs):
             status=500,
         )
     else:
-        idp.log_attributes(saml)
+        if idp.log_response_attributes:
+            idp.log_attributes(saml)
         if state and state.startswith("test:"):
             attrs = []
             for saml_attr, value in saml.get_attributes().items():

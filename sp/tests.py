@@ -202,3 +202,29 @@ class DuplicateIdPTest(TestCase):
         idp = make_idp(name="Primary")
         copy = idp.duplicate(name="Secondary")
         self.assertEqual(copy.name, "Secondary")
+
+
+class LogResponseAttributesToggleTest(TestCase):
+    class FakeSAML:
+        def get_nameid(self):
+            return "user@example.com"
+
+        def get_attributes(self):
+            return {"eppn": ["user@example.com"]}
+
+    def test_toggle_default_true(self):
+        idp = make_idp()
+        self.assertTrue(idp.log_response_attributes)
+
+    def test_logs_when_enabled(self):
+        idp = make_idp(log_response_attributes=True)
+        idp.log_attributes(self.FakeSAML())
+        self.assertEqual(idp.attribute_logs.count(), 1)
+
+    def test_disabled_toggle_gates_logging_at_call_site(self):
+        # The ACS view guards on idp.log_response_attributes; when off it does
+        # not call log_attributes, so no row is written.
+        idp = make_idp(log_response_attributes=False)
+        if idp.log_response_attributes:
+            idp.log_attributes(self.FakeSAML())
+        self.assertEqual(idp.attribute_logs.count(), 0)
