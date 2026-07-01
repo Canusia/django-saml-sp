@@ -11,10 +11,12 @@ from onelogin.saml2.settings import OneLogin_Saml2_Settings
 from .utils import get_request_idp, get_session_nameid, get_session_nameid_format
 
 
+def _should_log_response(idp, state):
+    return idp.log_response_attributes and not (state and state.startswith("test:"))
+
+
 def metadata(request, **kwargs):
     idp = get_request_idp(request, **kwargs)
-    print(idp.sp_settings)
-    
     saml_settings = OneLogin_Saml2_Settings(
         settings=idp.sp_settings, sp_validation_only=True
     )
@@ -42,6 +44,8 @@ def acs(request, **kwargs):
             status=500,
         )
     else:
+        if _should_log_response(idp, state):
+            idp.log_attributes(saml)
         if state and state.startswith("test:"):
             attrs = []
             for saml_attr, value in saml.get_attributes().items():
@@ -92,6 +96,7 @@ def acs(request, **kwargs):
                         "nameid": idp.get_nameid(saml),
                         "idp": idp,
                         "verify": False,
+                        "auth_failed_message": idp.auth_failed_message,
                     },
                     status=401,
                 )
