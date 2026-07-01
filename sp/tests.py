@@ -143,3 +143,31 @@ class AuthFailedMessageTest(TestCase):
             {"idp": idp, "auth_failed_message": idp.auth_failed_message},
         )
         self.assertIn("You have no MyCE account. Contact support.", html)
+
+
+from sp.models import IdPAttribute, IdPUserDefaultValue
+
+
+class DuplicateIdPTest(TestCase):
+    def test_duplicate_copies_config_and_children(self):
+        idp = make_idp(name="Primary", want_assertions_signed=True)
+        IdPAttribute.objects.create(
+            idp=idp, saml_attribute="eppn", mapped_name="username", is_nameid=True
+        )
+        IdPUserDefaultValue.objects.create(idp=idp, field="is_staff", value="0")
+
+        copy = idp.duplicate()
+
+        self.assertNotEqual(copy.pk, idp.pk)
+        self.assertEqual(copy.name, "Primary (copy)")
+        self.assertTrue(copy.want_assertions_signed)
+        self.assertEqual(copy.attributes.count(), 1)
+        self.assertEqual(copy.attributes.first().saml_attribute, "eppn")
+        self.assertEqual(copy.user_defaults.count(), 1)
+        # original untouched
+        self.assertEqual(idp.attributes.count(), 1)
+
+    def test_duplicate_accepts_custom_name(self):
+        idp = make_idp(name="Primary")
+        copy = idp.duplicate(name="Secondary")
+        self.assertEqual(copy.name, "Secondary")

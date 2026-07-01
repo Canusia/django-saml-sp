@@ -1,6 +1,7 @@
 from __future__ import unicode_literals
 
 from django.contrib import admin
+from django.utils.translation import gettext_lazy as _
 
 from .models import IdP, IdPAttribute, IdPAttributeLog, IdPUserDefaultValue
 
@@ -28,7 +29,7 @@ class IdPAdmin(admin.ModelAdmin):
     )
     list_filter = ("is_active",)
     list_editable = ("sort_order", "is_active")
-    actions = ("import_metadata", "generate_certificates")
+    actions = ("import_metadata", "generate_certificates", "duplicate_idp")
     inlines = (IdPUserDefaultValueInline, IdPAttributeInline)
     fieldsets = (
         (
@@ -128,6 +129,15 @@ class IdPAdmin(admin.ModelAdmin):
     def import_metadata(self, request, queryset):
         for idp in queryset:
             idp.import_metadata()
+
+    def duplicate_idp(self, request, queryset):
+        count = 0
+        for idp in queryset:
+            idp.duplicate()
+            count += 1
+        self.message_user(request, "Duplicated %d IdP configuration(s)." % count)
+
+    duplicate_idp.short_description = _("Duplicate selected IdP configuration(s)")
 
     def save_model(self, request, obj, form, change):
         super(IdPAdmin, self).save_model(request, obj, form, change)

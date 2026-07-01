@@ -315,6 +315,29 @@ class IdP(models.Model):
             nameid=nameid, attributes=saml.get_attributes()
         )
 
+    def duplicate(self, name=None):
+        """Deep-copy this IdP config, including attribute maps and user defaults."""
+        attributes = list(self.attributes.all())
+        defaults = list(self.user_defaults.all())
+        new = IdP.objects.get(pk=self.pk)
+        new.pk = None
+        new._state.adding = True
+        new.name = name or "{} (copy)".format(self.name)
+        new.last_login = None
+        new.last_import = None
+        new.save()
+        for attr in attributes:
+            attr.pk = None
+            attr._state.adding = True
+            attr.idp = new
+            attr.save()
+        for default in defaults:
+            default.pk = None
+            default._state.adding = True
+            default.idp = new
+            default.save()
+        return new
+
     def mapped_attributes(self, saml):
         attrs = collections.OrderedDict()
         for attr in self.attributes.exclude(mapped_name=""):
