@@ -394,3 +394,39 @@ class ImportIdPJsonTest(TestCase):
         self.client.force_login(plain)
         resp = self.client.get(self.url)
         self.assertIn(resp.status_code, (302, 403))  # admin_view redirects or denies
+
+
+import datetime
+from django.utils import timezone
+
+from sp.admin import _import_one
+
+
+class RoundTripIdPJsonTest(TestCase):
+    def test_export_then_import_restores_config(self):
+        cert_expires = timezone.make_aware(datetime.datetime(2027, 1, 1))
+        src = make_idp(name="Src", entity_id="urn:rt", want_assertions_signed=True,
+                       private_key="KEY", certificate_expires=cert_expires)
+        IdPAttribute.objects.create(
+            idp=src, saml_attribute="eppn", mapped_name="username", is_nameid=True)
+        IdPUserDefaultValue.objects.create(idp=src, field="is_staff", value="1")
+
+        admin = IdPAdmin(IdP, AdminSite())
+        resp = admin.export_idp_json(
+            RequestFactory().get("/"), IdP.objects.filter(pk=src.pk))
+        src.delete()
+        self.assertEqual(IdP.objects.filter(entity_id="urn:rt").count(), 0)
+
+        for entry in _json.loads(resp.content):
+            _import_one(entry)
+
+        restored = IdP.objects.get(entity_id="urn:rt")
+        self.assertEqual(restored.name, "Src")
+        self.assertTrue(restored.want_assertions_signed)
+        self.assertEqual(restored.private_key, "KEY")
+        self.assertEqual(restored.attributes.first().saml_attribute, "eppn")
+        self.assertEqual(restored.user_defaults.first().value, "1")
+        self.assertEqual(restored.certificate_expires, cert_expires)
+        self.assertEqual(restored.certificate_expires.year, 2027)
+        self.assertEqual(restored.certificate_expires.month, 1)
+        self.assertEqual(restored.certificate_expires.day, 1)
