@@ -1,9 +1,38 @@
 from __future__ import unicode_literals
 
+import json
+from datetime import datetime, timezone
+
 from django.contrib import admin
+from django.http import HttpResponse
 from django.utils.translation import gettext_lazy as _
 
 from .models import IdP, IdPAttribute, IdPAttributeLog, IdPUserDefaultValue
+
+
+IDP_EXPORT_EXCLUDE = {"id", "last_login", "last_import"}
+
+
+def _serialize_idp(idp):
+    """Serialize an IdP's config graph to a plain dict (JSON-ready via default=str)."""
+    data = {
+        f.name: f.value_from_object(idp)
+        for f in idp._meta.concrete_fields
+        if f.name not in IDP_EXPORT_EXCLUDE
+    }
+    data["attributes"] = [
+        {
+            "saml_attribute": a.saml_attribute,
+            "mapped_name": a.mapped_name,
+            "is_nameid": a.is_nameid,
+            "always_update": a.always_update,
+        }
+        for a in idp.attributes.all()
+    ]
+    data["user_defaults"] = [
+        {"field": d.field, "value": d.value} for d in idp.user_defaults.all()
+    ]
+    return data
 
 
 class IdPAttributeInline(admin.TabularInline):
@@ -29,7 +58,7 @@ class IdPAdmin(admin.ModelAdmin):
     )
     list_filter = ("is_active",)
     list_editable = ("sort_order", "is_active")
-    actions = ("import_metadata", "generate_certificates", "duplicate_idp")
+    actions = ("import_metadata", "generate_certificates", "duplicate_idp", "export_idp_json")
     inlines = (IdPUserDefaultValueInline, IdPAttributeInline)
     fieldsets = (
         (
@@ -139,6 +168,18 @@ class IdPAdmin(admin.ModelAdmin):
         self.message_user(request, "Duplicated %d IdP configuration(s)." % count)
 
     duplicate_idp.short_description = _("Duplicate selected IdP configuration(s)")
+
+    def export_idp_json(self, request, queryset):
+        payload = json.dumps(
+            [_serialize_idp(idp) for idp in queryset], default=str, indent=2)
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        resp = HttpResponse(payload, content_type="application/json")
+        resp["Content-Disposition"] = (
+            'attachment; filename="idp_config_export_%s.json"' % stamp)
+        return resp
+
+    export_idp_json.short_description = _(
+        "Export selected IdP configuration(s) to JSON")
 
     def save_model(self, request, obj, form, change):
         super(IdPAdmin, self).save_model(request, obj, form, change)

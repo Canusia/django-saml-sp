@@ -272,3 +272,35 @@ class LogResponseAttributesToggleTest(TestCase):
         idp = make_idp(log_response_attributes=False)
         self.assertFalse(_should_log_response(idp, None))
         self.assertEqual(idp.attribute_logs.count(), 0)
+
+
+import json as _json
+from django.contrib.admin.sites import AdminSite
+from django.test import RequestFactory
+
+from sp.admin import IdPAdmin
+
+
+class ExportIdPJsonTest(TestCase):
+    def test_export_includes_config_key_and_children(self):
+        idp = make_idp(name="Exp", entity_id="urn:idp:exp", private_key="SECRETKEY")
+        IdPAttribute.objects.create(
+            idp=idp, saml_attribute="eppn", mapped_name="username", is_nameid=True)
+        IdPUserDefaultValue.objects.create(idp=idp, field="is_staff", value="0")
+
+        admin = IdPAdmin(IdP, AdminSite())
+        resp = admin.export_idp_json(
+            RequestFactory().get("/"), IdP.objects.filter(pk=idp.pk))
+
+        self.assertEqual(resp["Content-Type"], "application/json")
+        self.assertIn("attachment", resp["Content-Disposition"])
+        data = _json.loads(resp.content)
+        self.assertEqual(len(data), 1)
+        entry = data[0]
+        self.assertEqual(entry["entity_id"], "urn:idp:exp")
+        self.assertEqual(entry["private_key"], "SECRETKEY")  # 1a: sensitive included
+        self.assertNotIn("id", entry)
+        self.assertNotIn("last_login", entry)
+        self.assertEqual(entry["attributes"][0]["saml_attribute"], "eppn")
+        self.assertTrue(entry["attributes"][0]["is_nameid"])
+        self.assertEqual(entry["user_defaults"][0]["field"], "is_staff")
