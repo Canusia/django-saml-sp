@@ -213,6 +213,10 @@ class IdPAdmin(admin.ModelAdmin):
             created = updated = failed = 0
             errors = []
             for entry in entries:
+                if not isinstance(entry, dict):
+                    failed += 1
+                    errors.append(str(_("Skipped a non-object entry.")))
+                    continue
                 try:
                     with transaction.atomic():
                         result = _import_one(entry)

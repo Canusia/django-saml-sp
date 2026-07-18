@@ -395,6 +395,12 @@ class ImportIdPJsonTest(TestCase):
         resp = self.client.get(self.url)
         self.assertIn(resp.status_code, (302, 403))  # admin_view redirects or denies
 
+    def test_valid_json_but_not_object_is_handled(self):
+        before = IdP.objects.count()
+        resp = self.client.post(self.url, {"config_json": '"just a string"'})
+        self.assertIn(resp.status_code, (200, 302))  # no 500
+        self.assertEqual(IdP.objects.count(), before)
+
 
 import datetime
 from django.utils import timezone
