@@ -1,3 +1,9 @@
+## 0.10.0
+
+* Admin: export selected `IdP` configuration(s) to a downloadable JSON file (a bulk action). The export includes the full config graph — IdP fields (including `private_key`/`x509_certificate`), attribute mappings, and user default values — excluding runtime state (`id`, `last_login`, `last_import`).
+* Admin: import IdP configuration(s) by pasting JSON into a textarea (an "Import from JSON" changelist view). Upserts by `entity_id` (matching config is updated and its child rows replaced; otherwise a new IdP is created); accepts a single object or an array; fails closed on malformed/non-object JSON and isolates per-entry failures.
+
+
 ## 0.8.0
 
 * Send `nameid` and `nameid_format` on SLO requests (#25).
