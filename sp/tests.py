@@ -304,3 +304,93 @@ class ExportIdPJsonTest(TestCase):
         self.assertEqual(entry["attributes"][0]["saml_attribute"], "eppn")
         self.assertTrue(entry["attributes"][0]["is_nameid"])
         self.assertEqual(entry["user_defaults"][0]["field"], "is_staff")
+
+
+from django.contrib.auth import get_user_model
+from django.contrib.auth.signals import user_logged_in
+from django.urls import reverse
+
+
+def _disconnect_login_signal():
+    """The django_login_history post_login receiver crashes on the test
+    client's missing REMOTE_ADDR. Disconnect for the duration of the test."""
+    receivers = list(user_logged_in.receivers)
+    user_logged_in.receivers = []
+    return receivers
+
+
+def _reconnect_login_signal(receivers):
+    user_logged_in.receivers = receivers
+
+
+class ImportIdPJsonTest(TestCase):
+    def setUp(self):
+        User = get_user_model()
+        self._saved_login_receivers = _disconnect_login_signal()
+        self.admin_user = User.objects.create(
+            username="root@example.com", email="root@example.com",
+            is_staff=True, is_superuser=True)
+        self.client.force_login(self.admin_user)
+        self.url = reverse("admin:sp_idp_import_json")
+
+    def tearDown(self):
+        _reconnect_login_signal(self._saved_login_receivers)
+
+    def _payload(self, **over):
+        entry = {
+            "name": "New IdP", "base_url": "https://sp.example.com",
+            "contact_name": "A", "contact_email": "a@example.com",
+            "entity_id": "urn:new",
+            "attributes": [
+                {"saml_attribute": "eppn", "mapped_name": "username", "is_nameid": True}],
+            "user_defaults": [{"field": "is_staff", "value": "0"}],
+        }
+        entry.update(over)
+        return _json.dumps(entry)
+
+    def test_get_renders_textarea(self):
+        resp = self.client.get(self.url)
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'name="config_json"')
+
+    def test_post_creates_new_idp_with_children(self):
+        resp = self.client.post(self.url, {"config_json": self._payload()})
+        self.assertEqual(resp.status_code, 302)
+        idp = IdP.objects.get(entity_id="urn:new")
+        self.assertEqual(idp.name, "New IdP")
+        self.assertEqual(idp.attributes.count(), 1)
+        self.assertEqual(idp.user_defaults.count(), 1)
+
+    def test_post_upserts_by_entity_id_and_replaces_children(self):
+        existing = make_idp(name="Old", entity_id="urn:same")
+        IdPAttribute.objects.create(idp=existing, saml_attribute="old_attr")
+        resp = self.client.post(self.url, {"config_json": self._payload(
+            name="Updated", entity_id="urn:same",
+            attributes=[{"saml_attribute": "new_attr", "mapped_name": "username"}],
+            user_defaults=[])})
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(IdP.objects.filter(entity_id="urn:same").count(), 1)
+        existing.refresh_from_db()
+        self.assertEqual(existing.name, "Updated")
+        self.assertEqual(existing.attributes.count(), 1)
+        self.assertEqual(existing.attributes.first().saml_attribute, "new_attr")
+
+    def test_accepts_json_array(self):
+        payload = "[%s, %s]" % (self._payload(entity_id="urn:a"),
+                                self._payload(entity_id="urn:b"))
+        self.client.post(self.url, {"config_json": payload})
+        self.assertTrue(IdP.objects.filter(entity_id="urn:a").exists())
+        self.assertTrue(IdP.objects.filter(entity_id="urn:b").exists())
+
+    def test_malformed_json_writes_nothing(self):
+        before = IdP.objects.count()
+        resp = self.client.post(self.url, {"config_json": "{not valid"})
+        self.assertEqual(resp.status_code, 200)  # re-rendered form
+        self.assertEqual(IdP.objects.count(), before)
+
+    def test_permission_denied_for_non_staff(self):
+        User = get_user_model()
+        plain = User.objects.create(username="plain@example.com", email="plain@example.com")
+        self.client.force_login(plain)
+        resp = self.client.get(self.url)
+        self.assertIn(resp.status_code, (302, 403))  # admin_view redirects or denies

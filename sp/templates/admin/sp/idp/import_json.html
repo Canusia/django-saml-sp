@@ -1,0 +1,17 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+{% block content %}
+<form method="post">
+  {% csrf_token %}
+  <p>{% trans "Paste a single IdP config object or an array of them (as produced by the export action)." %}</p>
+  <div class="form-row">
+    <label for="id_config_json">{% trans "Config JSON" %}</label>
+    <textarea id="id_config_json" name="config_json" rows="24" cols="100"
+              style="width:100%;font-family:monospace;">{{ config_json }}</textarea>
+  </div>
+  <div class="submit-row">
+    <input type="submit" value="{% trans 'Import' %}" class="default">
+    <a href="{% url 'admin:sp_idp_changelist' %}" class="closelink">{% trans 'Cancel' %}</a>
+  </div>
+</form>
+{% endblock %}

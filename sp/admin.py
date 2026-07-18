@@ -3,8 +3,12 @@ from __future__ import unicode_literals
 import json
 from datetime import datetime, timezone
 
-from django.contrib import admin
+from django.contrib import admin, messages
+from django.core.exceptions import PermissionDenied
+from django.db import transaction
 from django.http import HttpResponse
+from django.shortcuts import redirect, render
+from django.urls import path
 from django.utils.translation import gettext_lazy as _
 
 from .models import IdP, IdPAttribute, IdPAttributeLog, IdPUserDefaultValue
@@ -33,6 +37,44 @@ def _serialize_idp(idp):
         {"field": d.field, "value": d.value} for d in idp.user_defaults.all()
     ]
     return data
+
+
+_IDP_IMPORT_FIELDS = {
+    f.name for f in IdP._meta.concrete_fields
+} - IDP_EXPORT_EXCLUDE
+
+
+def _apply_idp_fields(idp, entry):
+    """Set known IdP config fields from an entry dict; ignore unknown keys."""
+    for key, value in entry.items():
+        if key not in _IDP_IMPORT_FIELDS:
+            continue
+        field = IdP._meta.get_field(key)
+        setattr(idp, key, field.to_python(value) if value is not None else None)
+
+
+def _import_one(entry):
+    """Upsert one IdP config entry. Returns 'created' or 'updated'."""
+    entity_id = (entry.get("entity_id") or "").strip()
+    existing = IdP.objects.filter(entity_id=entity_id).first() if entity_id else None
+    idp = existing or IdP()
+    _apply_idp_fields(idp, entry)
+    idp.save()
+    # Replace child rows (safe for both create and update paths).
+    idp.attributes.all().delete()
+    idp.user_defaults.all().delete()
+    for a in entry.get("attributes") or []:
+        IdPAttribute.objects.create(
+            idp=idp,
+            saml_attribute=a.get("saml_attribute", ""),
+            mapped_name=a.get("mapped_name", ""),
+            is_nameid=bool(a.get("is_nameid", False)),
+            always_update=bool(a.get("always_update", False)),
+        )
+    for d in entry.get("user_defaults") or []:
+        IdPUserDefaultValue.objects.create(
+            idp=idp, field=d.get("field", ""), value=d.get("value", ""))
+    return "updated" if existing else "created"
 
 
 class IdPAttributeInline(admin.TabularInline):
@@ -142,6 +184,50 @@ class IdPAdmin(admin.ModelAdmin):
         ),
     )
     readonly_fields = ("last_import", "last_login")
+    change_list_template = "admin/sp/idp/change_list.html"
+
+    def get_urls(self):
+        custom = [
+            path("import-json/", self.admin_site.admin_view(self.import_json_view),
+                 name="sp_idp_import_json"),
+        ]
+        return custom + super().get_urls()
+
+    def import_json_view(self, request):
+        if not (self.has_add_permission(request)
+                and self.has_change_permission(request)):
+            raise PermissionDenied
+        context = {
+            **self.admin_site.each_context(request),
+            "title": _("Import IdP configuration from JSON"),
+            "opts": self.model._meta,
+            "config_json": request.POST.get("config_json", ""),
+        }
+        if request.method == "POST":
+            try:
+                data = json.loads(context["config_json"])
+            except json.JSONDecodeError as exc:
+                messages.error(request, _("Invalid JSON: %s") % exc)
+                return render(request, "admin/sp/idp/import_json.html", context)
+            entries = data if isinstance(data, list) else [data]
+            created = updated = failed = 0
+            errors = []
+            for entry in entries:
+                try:
+                    with transaction.atomic():
+                        result = _import_one(entry)
+                    created += result == "created"
+                    updated += result == "updated"
+                except Exception as exc:  # one bad entry must not abort the batch
+                    failed += 1
+                    errors.append("%s: %s" % (entry.get("name", "?"), exc))
+            msg = _("Imported: %(c)d created, %(u)d updated, %(f)d failed.") % {
+                "c": created, "u": updated, "f": failed}
+            if errors:
+                msg += " " + "; ".join(errors)
+            (messages.warning if failed else messages.success)(request, msg)
+            return redirect("admin:sp_idp_changelist")
+        return render(request, "admin/sp/idp/import_json.html", context)
 
     def get_changeform_initial_data(self, request):
         return {
